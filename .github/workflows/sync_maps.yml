@@ -1,0 +1,86 @@
+name: Sync Maps to PostgreSQL
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - '**.mxl'      # Only run when .mxl files change
+      - '**.map'
+      - '**.MAP'
+      - '**.MXL'
+
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      sync_all:
+        description: 'Force sync ALL maps (not just changed ones)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+# ── Job ───────────────────────────────────────────────────────────────────────
+jobs:
+  sync_maps:
+    name: Parse & sync changed maps to PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+
+      # 1. Checkout the repo so we have access to sync_maps.py
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # Need 2 commits to detect changed files
+
+      # 2. Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: |
+          pip install psycopg2-binary requests
+
+      # 4. Detect which .mxl files changed in this push
+      - name: Detect changed .mxl files
+        id: changed
+        run: |
+          # Get list of added/modified files in this push
+          # For manual workflow_dispatch, this will be empty → sync_maps.py handles it
+          CHANGED=$(git diff --name-only --diff-filter=AMR HEAD~1 HEAD 2>/dev/null | grep -iE '\.(mxl|map)$' | tr '\n' ' ' || echo "")
+          echo "files=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Changed .mxl files: $CHANGED"
+
+      # 5. Run sync — only changed files (or all if manually triggered with sync_all=true)
+      - name: Sync maps to PostgreSQL
+        env:
+          PG_URI:             ${{ secrets.PG_URI }}
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY:  ${{ github.repository }}
+          CHANGED_FILES:      ${{ steps.changed.outputs.files }}
+        run: |
+          if [ "${{ github.event.inputs.sync_all }}" = "true" ]; then
+            echo "Manual full sync triggered"
+            python sync_maps.py --all
+          else
+            python sync_maps.py
+          fi
+
+      # 6. Post summary to job output
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Map Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repo:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Changed files:** ${{ steps.changed.outputs.files || 'All (manual trigger)' }}" >> $GITHUB_STEP_SUMMARY

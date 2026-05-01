@@ -32,7 +32,7 @@ PG_URI           = os.environ.get("PG_URI", "")
 GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "")  # "owner/repo"
 CHANGED_FILES    = os.environ.get("CHANGED_FILES", "")       # space-separated paths
-MXL_EXT         = {".mxl", ".map", ".xml"}
+MXL_EXT         = {".mxl"}
 
 # ── DB setup ───────────────────────────────────────────────────────────────────
 def get_conn():
